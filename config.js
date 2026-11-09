@@ -2,5 +2,5 @@
 // 꼭 채워 둔다. 채워 두면 주소 뒤에 ?s=다른서버 를 붙인 피싱 링크가 무시된다.
 // 비워 두면 처음 연 사람이 관리 서버 주소를 직접 넣거나, ?s= 주소로 열고 기관 이름을 확인한 뒤 연결한다.
 window.PHOTO_CONFIG = {
-  serverUrl: ''
+  serverUrl: 'https://script.google.com/macros/s/AKfycbzNrJPC4H-3sI8diNHDoMvZ4UAIoL_iaABAHN0FE9K0PzzMHTaCP9IcNNVlZd1oJ9lj/exec'
 };
