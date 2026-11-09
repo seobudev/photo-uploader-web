@@ -122,6 +122,9 @@
         같은 폴더를 다시 고르면 이미 올린 사진은 건너뛰고 이어서 올립니다.</p>
       <button class="btn" id="btnFolder">📁 폴더 고르기</button>
       <input type="file" id="fFolder" webkitdirectory multiple class="hidden">
+      <label for="fHold" style="margin-top:12px">보류할 폴더 이름 (선택, 쉼표로 구분)</label>
+      <input type="text" id="fHold" placeholder="예) 개인, 원본, 보류" autocomplete="off">
+      <p class="muted">이름에 이 글자가 들어간 폴더는 그 안의 하위 폴더까지 목록에만 보이고 올리지 않습니다. 띄어쓰기·기호는 무시하며, 이 PC에 기억됩니다.</p>
     </div>
     <div class="card hidden" id="folderCard">
       <div class="row" style="align-items:flex-start">

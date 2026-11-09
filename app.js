@@ -473,6 +473,31 @@
       g.issues = r.issues; g.notes = r.notes || []; g.ok = r.ok; g.include = r.ok;
       g.items = g.files.map(function (f) { return { file: f, status: 'wait', note: '', shotAt: null }; });
     });
+    applyHold();
+    renderFolders();
+  });
+
+  /* 보류할 폴더 이름: 경로의 어느 폴더 이름에든 들어 있으면(하위 폴더 포함) 올리지 않는다 */
+  $('fHold').value = lsGet('photo.hold', '') || '';
+  function holdWords() {
+    return $('fHold').value.split(/[,，\n]/).map(function (s) { return { raw: s.trim(), key: compactKey(s) }; })
+      .filter(function (w) { return w.key; });
+  }
+  function applyHold() {
+    var words = holdWords();
+    S.folders.forEach(function (g) {
+      var keys = g.path.split('/').map(compactKey);
+      var hit = null;
+      words.some(function (w) { return keys.some(function (k) { return k.indexOf(w.key) >= 0; }) && (hit = w.raw); });
+      if (hit && !g.held) g.include = false;
+      else if (!hit && g.held) g.include = g.ok;
+      g.held = hit;
+    });
+  }
+  $('fHold').addEventListener('change', function () {
+    lsSet('photo.hold', $('fHold').value.trim());
+    if (!S.folders.length || S.busy) return;
+    applyHold();
     renderFolders();
   });
 
@@ -485,17 +510,19 @@
     $('folderCard').classList.remove('hidden');
     var active = document.activeElement;
     if (active && active.dataset && active.dataset.f === 'program' && !S.busy) return; // 입력 중엔 다시 그리지 않음
-    $('folderTitle').textContent = '폴더 확인 (' + S.folders.length + '개)';
+    var heldN = S.folders.filter(function (g) { return g.held; }).length;
+    $('folderTitle').textContent = '폴더 확인 (' + S.folders.length + '개' + (heldN ? ', 보류 ' + heldN + '개' : '') + ')';
     $('folderList').innerHTML = S.folders.map(function (g, i) {
       var name = folderValid(g) ? folderAlbum(g) : '';
       var exists = name && S.boot.albumNames.indexOf(name) >= 0;
       var done = g.items.filter(function (q) { return q.status === 'ok' || q.status === 'dup'; }).length;
       var bad = g.items.filter(function (q) { return q.status === 'err' || q.status === 'warn'; });
       return '<div class="folder" data-i="' + i + '">' +
-        '<label class="check" style="margin:0"><input type="checkbox" data-f="include"' + (g.include ? ' checked' : '') + '> ' +
+        '<label class="check" style="margin:0"><input type="checkbox" data-f="include"' + (g.include ? ' checked' : '') + (g.held ? ' disabled' : '') + '> ' +
         '<b>' + esc(g.name) + '</b> <span class="muted">' + g.files.length + '장</span>' +
-        (g.ok ? '<span class="badge ok">자동 인식</span>' : '<span class="badge warn">확인 필요</span>') + '</label>' +
+        (g.held ? '<span class="badge warn">보류</span>' : g.ok ? '<span class="badge ok">자동 인식</span>' : '<span class="badge warn">확인 필요</span>') + '</label>' +
         '<div class="src">' + esc(g.path) + '</div>' +
+        (g.held ? '<div class="muted">보류: 이름에 \'' + esc(g.held) + '\' 포함 — 올리려면 위 보류 칸에서 지우세요.</div>' : '') +
         (g.issues && g.issues.length ? '<div class="muted" style="color:var(--warn)">' + esc(g.issues.join(' · ')) + '</div>' : '') +
         (g.notes && g.notes.length ? '<div class="muted">' + esc(g.notes.join(' · ')) + '</div>' : '') +
         '<div class="row">' +
@@ -525,7 +552,7 @@
   $('folderList').addEventListener('change', function (ev) {
     var box = ev.target.closest('.folder'); if (!box) return;
     var g = S.folders[+box.dataset.i], f = ev.target.dataset.f;
-    if (f === 'include') g.include = ev.target.checked;
+    if (f === 'include') g.include = !g.held && ev.target.checked;
     if (f === 'team') g.team = ev.target.value;
     if (f === 'date') { g.code = dateInputToCode(ev.target.value); g.annual = false; }
     if (f === 'annual') {
