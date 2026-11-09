@@ -1,0 +1,11 @@
+{
+  "name": "사진 올리기",
+  "short_name": "사진 올리기",
+  "display": "standalone",
+  "background_color": "#f5f6f8",
+  "theme_color": "#1a73e8",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" },
+    { "src": "icon-180.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}
