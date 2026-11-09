@@ -466,16 +466,23 @@
     msg($('annualMsg'), '', '');
     if (!S.folders.length) { msg($('globalMsg'), 'err', '사진·동영상 파일이 있는 폴더가 없습니다.'); return; }
     S.folders.forEach(function (g) {
-      var minT = Math.min.apply(null, g.files.map(function (f) { return f.lastModified || Date.now(); }));
-      var r = parseFolderName(g.name, S.boot.teams, { hintCode: codeFromMs(minT), year: S.boot.year, ancestors: g.ancestors });
-      g.code = r.code || ''; g.annual = !!r.annual; g.team = r.team || '';
-      g.program = r.team && r.program ? canon(r.team, r.program) : r.program;
-      g.issues = r.issues; g.notes = r.notes || []; g.ok = r.ok; g.include = r.ok;
+      g.origName = g.name;
+      parseGroup(g);
       g.items = g.files.map(function (f) { return { file: f, status: 'wait', note: '', shotAt: null }; });
     });
     applyHold();
     renderFolders();
   });
+
+  /** 폴더 이름(수기로 고친 이름 포함)을 읽어 날짜·팀·프로그램명을 채운다 */
+  function parseGroup(g) {
+    var minT = Math.min.apply(null, g.files.map(function (f) { return f.lastModified || Date.now(); }));
+    var r = parseFolderName(g.name, S.boot.teams, { hintCode: codeFromMs(minT), year: S.boot.year, ancestors: g.ancestors });
+    g.code = r.code || ''; g.annual = !!r.annual; g.team = r.team || ''; g.annualFrom = '';
+    g.program = r.team && r.program ? canon(r.team, r.program) : r.program;
+    g.issues = r.issues; g.notes = r.notes || []; g.ok = r.ok;
+    if (!g.held) g.include = r.ok;
+  }
 
   /* 보류할 폴더 이름: 경로의 어느 폴더 이름에든 들어 있으면(하위 폴더 포함) 올리지 않는다 */
   $('fHold').value = lsGet('photo.hold', '') || '';
@@ -509,7 +516,7 @@
   function renderFolders() {
     $('folderCard').classList.remove('hidden');
     var active = document.activeElement;
-    if (active && active.dataset && active.dataset.f === 'program' && !S.busy) return; // 입력 중엔 다시 그리지 않음
+    if (active && active.dataset && (active.dataset.f === 'program' || active.dataset.f === 'name') && !S.busy) return; // 입력 중엔 다시 그리지 않음
     var heldN = S.folders.filter(function (g) { return g.held; }).length;
     $('folderTitle').textContent = '폴더 확인 (' + S.folders.length + '개' + (heldN ? ', 보류 ' + heldN + '개' : '') + ')';
     $('folderList').innerHTML = S.folders.map(function (g, i) {
@@ -523,6 +530,9 @@
         (g.held ? '<span class="badge warn">보류</span>' : g.ok ? '<span class="badge ok">자동 인식</span>' : '<span class="badge warn">확인 필요</span>') + '</label>' +
         '<div class="src">' + esc(g.path) + '</div>' +
         (g.held ? '<div class="muted">보류: 이름에 \'' + esc(g.held) + '\' 포함 — 올리려면 위 보류 칸에서 지우세요.</div>' : '') +
+        '<label>폴더 이름 <span class="muted">— 고치면 날짜·팀·프로그램명을 다시 읽습니다 (예: 250417 봄봄축제)</span></label>' +
+        '<div class="row"><input type="text" data-f="name" value="' + esc(g.name) + '" style="flex:3">' +
+          (g.name !== g.origName ? '<button class="btn small" data-f="nameReset" style="flex:none">원래대로</button>' : '') + '</div>' +
         (g.issues && g.issues.length ? '<div class="muted" style="color:var(--warn)">' + esc(g.issues.join(' · ')) + '</div>' : '') +
         (g.notes && g.notes.length ? '<div class="muted">' + esc(g.notes.join(' · ')) + '</div>' : '') +
         '<div class="row">' +
@@ -561,7 +571,18 @@
       g.code = g.annual ? annualCode(isValidYmd(g.code) ? 2000 + +g.code.slice(0, 2) : S.boot.year) : (g.annualFrom || '');
     }
     if (f === 'program') { g.program = ev.target.value; ev.target.blur(); }
+    if (f === 'name') {
+      var nm = ev.target.value.trim();
+      ev.target.blur();
+      if (!nm || nm === g.name || S.busy) { renderFolders(); return; }
+      g.name = nm; parseGroup(g);
+    }
     renderFolders();
+  });
+  $('folderList').addEventListener('click', function (ev) {
+    if (!ev.target.dataset || ev.target.dataset.f !== 'nameReset' || S.busy) return;
+    var g = S.folders[+ev.target.closest('.folder').dataset.i];
+    g.name = g.origName; parseGroup(g); renderFolders();
   });
 
   /** 같은 팀·같은 프로그램 폴더가 2개 이상이면 연간 앨범으로 묶기 */
