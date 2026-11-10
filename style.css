@@ -48,6 +48,8 @@ input:disabled { opacity: .5; }
 .msg.info { background: var(--chip); }
 .muted { color: var(--muted); font-size: 13px; }
 .folder { border-top: 1px solid var(--line); padding: 12px 0; }
+.folder.bad { border: 2px solid var(--err); border-radius: 10px; padding: 12px; margin: 6px 0; }
+.folder .need { color: var(--err); font-weight: 600; margin-top: 4px; }
 .folder .src { font-size: 13px; color: var(--muted); word-break: break-all; }
 .badge { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 99px; margin-left: 4px; }
 .badge.ok { color: var(--ok); border: 1px solid var(--ok); } .badge.warn { color: var(--warn); border: 1px solid var(--warn); }

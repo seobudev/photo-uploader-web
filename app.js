@@ -511,6 +511,13 @@
   function folderValid(g) {
     return !!(g.team && cleanProgram(g.program) && (g.annual ? isAnnualCode(g.code) : isValidYmd(g.code)));
   }
+  function folderMissing(g) {
+    var m = [];
+    if (!(g.annual ? isAnnualCode(g.code) : isValidYmd(g.code))) m.push('날짜');
+    if (!g.team) m.push('팀');
+    if (!cleanProgram(g.program)) m.push('프로그램명');
+    return m;
+  }
   function folderAlbum(g) { return buildAlbumName(g.code, g.team, canon(g.team, cleanProgram(g.program))); }
 
   function renderFolders() {
@@ -524,7 +531,9 @@
       var exists = name && S.boot.albumNames.indexOf(name) >= 0;
       var done = g.items.filter(function (q) { return q.status === 'ok' || q.status === 'dup'; }).length;
       var bad = g.items.filter(function (q) { return q.status === 'err' || q.status === 'warn'; });
-      return '<div class="folder" data-i="' + i + '">' +
+      var miss = g.include ? folderMissing(g) : [];
+      return '<div class="folder' + (miss.length ? ' bad' : '') + '" data-i="' + i + '">' +
+        (miss.length ? '<div class="need">⚠ ' + esc(miss.join('·')) + ' 칸을 채우거나, 이 폴더 체크를 끄세요</div>' : '') +
         '<label class="check" style="margin:0"><input type="checkbox" data-f="include"' + (g.include ? ' checked' : '') + (g.held ? ' disabled' : '') + '> ' +
         '<b>' + esc(g.name) + '</b> <span class="muted">' + g.files.length + '장</span>' +
         (g.held ? '<span class="badge warn">보류</span>' : g.ok ? '<span class="badge ok">자동 인식</span>' : '<span class="badge warn">확인 필요</span>') + '</label>' +
@@ -558,8 +567,8 @@
     $('fAll').disabled = S.busy || !selectable.length;
     var badN = sel.filter(function (g) { return !folderValid(g); }).length;
     var left = sel.reduce(function (n, g) { return n + g.items.filter(retryable).length; }, 0);
-    $('btnFolderUpload').disabled = S.busy || S.flushing || !sel.length || badN > 0 || !left;
-    $('btnFolderUpload').textContent = S.busy ? '올리는 중…' : badN ? '확인 필요한 폴더 ' + badN + '개를 고쳐 주세요' :
+    $('btnFolderUpload').disabled = S.busy || S.flushing || !sel.length || (!badN && !left);
+    $('btnFolderUpload').textContent = S.busy ? '올리는 중…' : badN ? '빈 칸이 있는 폴더 ' + badN + '개 — 눌러서 찾아가기' :
       !left ? '올릴 사진이 없습니다' : '선택한 폴더 ' + sel.length + '개 (' + left + '장) 올리기';
   }
 
@@ -620,6 +629,8 @@
 
   $('btnFolderUpload').onclick = function () {
     if (S.busy || S.flushing) return;
+    var firstBad = document.querySelector('#folderList .folder.bad');
+    if (firstBad) { firstBad.scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
     S.busy = true;
     var sel = S.folders.filter(function (g) { return g.include && folderValid(g); });
     var jobsMap = {};
