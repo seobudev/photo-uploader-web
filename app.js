@@ -552,6 +552,10 @@
         '</div>';
     }).join('');
     var sel = S.folders.filter(function (g) { return g.include; });
+    var selectable = S.folders.filter(function (g) { return !g.held; });
+    $('fAll').checked = selectable.length > 0 && sel.length === selectable.length;
+    $('fAll').indeterminate = sel.length > 0 && sel.length < selectable.length;
+    $('fAll').disabled = S.busy || !selectable.length;
     var badN = sel.filter(function (g) { return !folderValid(g); }).length;
     var left = sel.reduce(function (n, g) { return n + g.items.filter(retryable).length; }, 0);
     $('btnFolderUpload').disabled = S.busy || S.flushing || !sel.length || badN > 0 || !left;
@@ -577,6 +581,12 @@
       if (!nm || nm === g.name || S.busy) { renderFolders(); return; }
       g.name = nm; parseGroup(g);
     }
+    renderFolders();
+  });
+  $('fAll').addEventListener('change', function () {
+    if (S.busy) return;
+    var on = $('fAll').checked;
+    S.folders.forEach(function (g) { if (!g.held) g.include = on; });
     renderFolders();
   });
   $('folderList').addEventListener('click', function (ev) {
