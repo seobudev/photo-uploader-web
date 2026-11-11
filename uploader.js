@@ -48,10 +48,24 @@
     }
     function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
     // 429(요청이 너무 많음)는 구글이 처리하지 않은 요청이라 기다렸다 다시 보내도 중복되지 않는다
-    var RATE_WAITS = d.rateWaits || [30000, 90000, 300000];
-    var RATE_STOP = '구글포토가 요청이 너무 많다며 받지 않아 멈췄습니다 (HTTP 429). 다른 창·PC에서 동시에 올리고 있다면 하나만 두고, 10분쯤 뒤 같은 폴더를 다시 고르면 이어서 올라갑니다. 계속되면 관리자에게 알려주세요.';
+    var RATE_WAITS = d.rateWaits || [60000, 180000, 300000, 600000];
+    var RATE_STOP = '구글포토가 요청이 너무 많다며 받지 않아 멈췄습니다 (HTTP 429). 다른 창·PC에서 동시에 올리고 있다면 하나만 두고, 30분쯤 뒤 같은 폴더를 다시 고르면 이어서 올라갑니다. 계속되면 관리자에게 알려주세요.';
+    // 429를 한 번이라도 받으면 이후 모든 요청(전송·등록) 사이에 간격을 두고, 또 받으면 간격을 늘린다
+    var GAP = d.rateGap || [2000, 20000]; // [처음 간격, 최대 간격]
+    var gapMs = 0;
+    var nextAt = 0;
+    function pace() {
+      if (!gapMs) return Promise.resolve();
+      var now = Date.now();
+      var t = Math.max(now, nextAt);
+      nextAt = t + gapMs;
+      return t > now ? sleep(t - now) : Promise.resolve();
+    }
+    function slowDown() { gapMs = Math.min(Math.max(gapMs * 2, GAP[0]), GAP[1]); }
     function rateWait(n) {
-      if (d.onWait) d.onWait('구글포토가 잠시 쉬어 가라고 해서 ' + Math.round(RATE_WAITS[n] / 1000) + '초 기다린 뒤 이어서 올립니다…');
+      slowDown();
+      var s = Math.round(RATE_WAITS[n] / 1000);
+      if (d.onWait) d.onWait('구글포토가 잠시 쉬어 가라고 해서 ' + (s >= 60 ? Math.round(s / 60) + '분' : s + '초') + ' 기다린 뒤 속도를 낮춰 이어서 올립니다… (창을 닫지 마세요)');
       return sleep(RATE_WAITS[n]);
     }
 
@@ -76,7 +90,7 @@
     /** ② 원본 전송 (네트워크·5xx 오류는 2번까지 재시도). 전송은 사진을 만들지 않으므로 실패해도 안전 */
     function sendBytes(item, attempt, rate) {
       attempt = attempt || 0; rate = rate || 0;
-      return photosFetch(UPLOAD_URL, {
+      return pace().then(function () { return photosFetch(UPLOAD_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/octet-stream',
@@ -84,7 +98,7 @@
           'X-Goog-Upload-Protocol': 'raw'
         },
         body: item.file
-      }).then(function (res) {
+      }); }).then(function (res) {
         return readText(res).then(function (t) {
           if (res.status === 200 && t) return t;
           if (res.status === 429) {
@@ -122,7 +136,7 @@
         })
       });
       var all = function (status, memo) { return ready.map(function (x) { return { item: x.item, status: status, memo: memo }; }); };
-      return photosFetch(CREATE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body })
+      return pace().then(function () { return photosFetch(CREATE_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body }); })
         .then(function (res) {
           return readText(res).then(function (t) {
             if (res.status === 200 || res.status === 207) {
