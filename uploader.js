@@ -83,6 +83,15 @@
       });
     }
 
+    /** 구글 오류 응답에서 원인 문구만 뽑는다(어떤 한도인지 관리자가 알 수 있게) */
+    function googleReason(t) {
+      try {
+        var e = JSON.parse(t).error || {};
+        var m = String(e.message || '').slice(0, 200);
+        return m ? ' [구글 응답: ' + m + ']' : '';
+      } catch (x) { return ''; }
+    }
+
     function readText(res) {
       return Promise.resolve().then(function () { return res.text(); });
     }
@@ -157,7 +166,7 @@
             }
             if (res.status === 403 || res.status === 429) {
               var r403 = all('실패', 'HTTP ' + res.status);
-              r403.stop = res.status === 429 ? RATE_STOP : '구글포토 권한 오류로 멈췄습니다 (HTTP 403). 관리자에게 알려주세요.';
+              r403.stop = (res.status === 429 ? RATE_STOP : '구글포토 권한 오류로 멈췄습니다 (HTTP 403). 관리자에게 알려주세요.') + googleReason(t);
               return r403;
             }
             // 확실히 처리되지 않은 요청(잘못된 요청·앨범 없음)만 '실패', 나머지는 '확인필요'
