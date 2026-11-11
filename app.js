@@ -245,7 +245,8 @@
     api('bootstrap').then(function (b) {
       S.boot = b;
       S.engine = Uploader.createEngine({ api: api, getToken: getToken, fetch: window.fetch.bind(window), journal: journal,
-        device: deviceId(), user: b.email, onItem: onItem });
+        device: deviceId(), user: b.email, onItem: onItem,
+        onWait: function (m) { if (S.waitMsgEl) msg(S.waitMsgEl, 'info', m); } });
       show('screen-app');
       $('who').textContent = (S.cfg.orgName ? S.cfg.orgName + ' · ' : '') + b.email + (b.myTeam ? ' · ' + b.myTeam : '');
       if (!$('pDate').value) $('pDate').value = codeToDateInput(b.todayCode); // 다시 로그인해도 고른 날짜 유지
@@ -407,7 +408,7 @@
   function runJobs(jobs, progEl, msgEl) {
     var items = [];
     jobs.forEach(function (j) { j.items.forEach(function (q) { q.status = 'wait'; q.note = ''; items.push(q); }); });
-    progressItems = items; progressEl = progEl;
+    progressItems = items; progressEl = progEl; S.waitMsgEl = msgEl;
     progEl.classList.remove('hidden');
     setBusy(true);
     msg(msgEl, 'info', items.length + '장을 올립니다.');

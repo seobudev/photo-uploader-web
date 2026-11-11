@@ -47,6 +47,13 @@
       notify(item);
     }
     function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+    // 429(요청이 너무 많음)는 구글이 처리하지 않은 요청이라 기다렸다 다시 보내도 중복되지 않는다
+    var RATE_WAITS = d.rateWaits || [30000, 90000];
+    var RATE_STOP = '구글포토 올리기 한도에 걸려 멈췄습니다 (HTTP 429). 하루 한도(약 1만 건)라면 한국시간 오후 5시쯤(서머타임 기간 4시) 풀립니다. 그 뒤 같은 폴더를 다시 고르면 이어서 올라갑니다.';
+    function rateWait(n) {
+      if (d.onWait) d.onWait('구글포토가 잠시 쉬어 가라고 해서 ' + Math.round(RATE_WAITS[n] / 1000) + '초 기다린 뒤 이어서 올립니다…');
+      return sleep(RATE_WAITS[n]);
+    }
 
     /** 권한을 받아 요청. 권한을 못 받으면 요청이 나가지 않았으므로 err.notSent=true */
     function photosFetch(url, opts, retried) {
@@ -67,8 +74,8 @@
     }
 
     /** ② 원본 전송 (네트워크·5xx 오류는 2번까지 재시도). 전송은 사진을 만들지 않으므로 실패해도 안전 */
-    function sendBytes(item, attempt) {
-      attempt = attempt || 0;
+    function sendBytes(item, attempt, rate) {
+      attempt = attempt || 0; rate = rate || 0;
       return photosFetch(UPLOAD_URL, {
         method: 'POST',
         headers: {
@@ -80,7 +87,11 @@
       }).then(function (res) {
         return readText(res).then(function (t) {
           if (res.status === 200 && t) return t;
-          if (res.status === 403 || res.status === 429 || res.status === 401) {
+          if (res.status === 429) {
+            if (rate < RATE_WAITS.length) return rateWait(rate).then(function () { return sendBytes(item, attempt, rate + 1); });
+            throw StopError(RATE_STOP);
+          }
+          if (res.status === 403 || res.status === 401) {
             throw StopError('구글포토 권한·한도 오류로 멈췄습니다 (HTTP ' + res.status + '). 관리자에게 알려주세요.');
           }
           if ((res.status >= 500 || res.status === 200) && attempt < 2) return sleep(1500 * (attempt + 1)).then(function () { return sendBytes(item, attempt + 1); });
@@ -90,7 +101,7 @@
         if (err && err.stop) throw err;
         if (err && err.notSent) throw StopError('올리기 권한을 받지 못했습니다: ' + err.message);
         if (/^전송 실패/.test(err && err.message)) throw err;
-        if (attempt < 2) return sleep(1500 * (attempt + 1)).then(function () { return sendBytes(item, attempt + 1); });
+        if (attempt < 2) return sleep(1500 * (attempt + 1)).then(function () { return sendBytes(item, attempt + 1, rate); });
         throw new Error('네트워크 오류로 전송하지 못했습니다');
       });
     }
@@ -101,7 +112,8 @@
     }
 
     /** ③ 앨범에 등록. 반환: [{item, status, mediaId, memo}] */
-    function createInAlbum(albumId, ready) {
+    function createInAlbum(albumId, ready, rate) {
+      rate = rate || 0;
       ready.forEach(function (x) { journalSet(x.item, { state: 'creating' }); });
       var body = JSON.stringify({
         albumId: albumId,
@@ -126,9 +138,12 @@
                 return { item: x.item, status: '실패', memo: '등록 거부: ' + (r.status && r.status.message || '알 수 없음') };
               });
             }
+            if (res.status === 429 && rate < RATE_WAITS.length) {
+              return rateWait(rate).then(function () { return createInAlbum(albumId, ready, rate + 1); });
+            }
             if (res.status === 403 || res.status === 429) {
               var r403 = all('실패', 'HTTP ' + res.status);
-              r403.stop = '구글포토 권한·한도 오류로 멈췄습니다 (HTTP ' + res.status + '). 관리자에게 알려주세요.';
+              r403.stop = res.status === 429 ? RATE_STOP : '구글포토 권한 오류로 멈췄습니다 (HTTP 403). 관리자에게 알려주세요.';
               return r403;
             }
             // 확실히 처리되지 않은 요청(잘못된 요청·앨범 없음)만 '실패', 나머지는 '확인필요'
