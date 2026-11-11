@@ -122,10 +122,13 @@ function findTeam_(tokens, teams) {
     var tkNoNum = tk.replace(/^\d{1,2}/, '');
     for (var j = 0; j < teams.length; j++) {
       var keys = teamKeys_(teams[j]);
-      if (keys.indexOf(tk) >= 0 || (tkNoNum !== tk && keys.indexOf(tkNoNum) >= 0)) {
+      var hit = keys.indexOf(tk) >= 0 ? tk : (tkNoNum !== tk && keys.indexOf(tkNoNum) >= 0 ? tkNoNum : null);
+      if (hit) {
         var name = teams[j].name;
-        tokens.splice(t, 1);
-        return { team: name, tokens: tokens };
+        var removed = tokens.splice(t, 1)[0];
+        // 팀 이름('문화누리팀'·'문화누리')이 아니라 약칭('일상' 등 흔한 말일 수 있음)으로 찾았는지
+        var viaAlias = keys.indexOf(hit) >= (/팀$/.test(normalizeText(name)) && normalizeText(name).length >= 3 ? 2 : 1);
+        return { team: name, tokens: tokens, viaAlias: viaAlias, removed: removed, at: t };
       }
     }
   }
@@ -271,6 +274,19 @@ var ORDER_PREFIX_ = /^\s*(?:\d{1,2}\s*[.)_\-](?!\s*\d)|[ㄱ-ㅎA-Za-z]\s*[.)](?!
  * 팀·연도·월 폴더를 만나면 멈춘다. 그런 경계가 없으면 맨 위(직접 고른) 폴더는 넣지 않는다.
  * 순서 표시(10. / ㅎ. / 03_)는 뗀다.
  */
+/** 상위 폴더(가까운 것부터)에서 팀 찾기. 팀 이름으로 맞은 폴더를 약칭으로 맞은 폴더보다 먼저 쓴다 */
+function ancestorTeam_(ancestors, teams) {
+  var alias = null;
+  for (var i = 0; i < ancestors.length; i++) {
+    var a = normalizeText(ancestors[i]);
+    var ft = findTeam_(a.split(TOKEN_SPLIT_).filter(Boolean), teams);
+    if (!ft.team || ft.viaPrefix) continue;
+    if (!ft.viaAlias) return { team: ft.team, from: a, viaAlias: false };
+    if (!alias) alias = { team: ft.team, from: a, viaAlias: true };
+  }
+  return alias || { team: null, from: '', viaAlias: false };
+}
+
 function middleFolders_(ancestors, teams) {
   var words = [], dateText = '', dateFrom = '';
   for (var i = 0; i < ancestors.length; i++) {
@@ -279,7 +295,8 @@ function middleFolders_(ancestors, teams) {
     if (fd && isAnnualCode(fd.code)) fd = null;
     if (!fd && (/(?:^|[^\d])20\d{2}(?!\d)/.test(a) || /(?:^|[^\d])\d{1,2}\s*월/.test(a))) break; // 연도·월 폴더
     var ft = findTeam_(a.split(TOKEN_SPLIT_).filter(Boolean), teams);
-    if (ft.team && !ft.viaPrefix) break; // 팀 폴더
+    // 팀 폴더. 약칭으로만 맞은 폴더('일상 프로그램')는 더 위에 진짜 팀 폴더가 있으면 팀 폴더로 보지 않는다
+    if (ft.team && !ft.viaPrefix && !(ft.viaAlias && ancestorTeam_(ancestors.slice(i + 1), teams).team && !ancestorTeam_(ancestors.slice(i + 1), teams).viaAlias)) break;
     if (i === ancestors.length - 1) break; // 경계 없이 맨 위까지 오면 고른 폴더 이름은 넣지 않음
     var rest = a;
     if (fd) {
@@ -408,10 +425,13 @@ function parseFolderName(raw, teams, opts) {
     var second = findTeam_(found.tokens, teams);
     if (second.team && second.team !== team && !second.viaPrefix) issues.push('팀 이름이 여러 개(' + team + ', ' + second.team + ')입니다');
   }
-  var ancTeam = null, ancTeamFrom = '';
-  for (var i = 0; i < ancestors.length && !ancTeam; i++) {
-    var ft = findTeam_(normalizeText(ancestors[i]).split(TOKEN_SPLIT_).filter(Boolean), teams);
-    if (ft.team && !ft.viaPrefix) { ancTeam = ft.team; ancTeamFrom = normalizeText(ancestors[i]); }
+  var anc2 = ancestorTeam_(ancestors, teams);
+  var ancTeam = anc2.team, ancTeamFrom = anc2.from;
+  // 약칭으로만 찾은 팀(예: '일상')이 상위 폴더의 팀과 다르면, 그 말은 프로그램명으로 보고 상위 폴더의 팀을 쓴다
+  if (team && found.viaAlias && ancTeam && team !== ancTeam && !anc2.viaAlias) {
+    found.tokens.splice(found.at, 0, found.removed);
+    notes.push('\'' + normalizeText(found.removed) + '\'은(는) ' + team + ' 약칭이지만 상위 폴더가 ' + ancTeam + '이라 프로그램명으로 봤습니다');
+    team = null;
   }
   if (team && ancTeam && team !== ancTeam) issues.push('폴더 이름의 팀(' + team + ')과 상위 폴더의 팀(' + ancTeam + ')이 다릅니다');
   if (!team && ancTeam) { team = ancTeam; notes.push('팀은 상위 폴더(' + ancTeamFrom + ')에서 찾았습니다'); }
