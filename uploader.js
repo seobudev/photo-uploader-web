@@ -48,8 +48,8 @@
     }
     function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
     // 429(요청이 너무 많음)는 구글이 처리하지 않은 요청이라 기다렸다 다시 보내도 중복되지 않는다
-    var RATE_WAITS = d.rateWaits || [30000, 90000];
-    var RATE_STOP = '구글포토 올리기 한도에 걸려 멈췄습니다 (HTTP 429). 하루 한도(약 1만 건)라면 한국시간 오후 5시쯤(서머타임 기간 4시) 풀립니다. 그 뒤 같은 폴더를 다시 고르면 이어서 올라갑니다.';
+    var RATE_WAITS = d.rateWaits || [30000, 90000, 300000];
+    var RATE_STOP = '구글포토가 요청이 너무 많다며 받지 않아 멈췄습니다 (HTTP 429). 다른 창·PC에서 동시에 올리고 있다면 하나만 두고, 10분쯤 뒤 같은 폴더를 다시 고르면 이어서 올라갑니다. 계속되면 관리자에게 알려주세요.';
     function rateWait(n) {
       if (d.onWait) d.onWait('구글포토가 잠시 쉬어 가라고 해서 ' + Math.round(RATE_WAITS[n] / 1000) + '초 기다린 뒤 이어서 올립니다…');
       return sleep(RATE_WAITS[n]);
