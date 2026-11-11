@@ -22,6 +22,43 @@
     del: function (key) { var a = this.all(); delete a[key]; lsSet(this._k(), a); }
   };
 
+  /* 이 PC에서 올리기를 마친 사진 기억(앨범 이름 + 파일 이름·크기·수정일의 해시). 사진 내용은 저장하지 않는다.
+     다시 고를 때 촬영일 읽기·서버 확인·드라이브 내려받기를 건너뛰는 용도일 뿐, 중복 방지의 정본은 서버 시트다. */
+  var doneMem = {
+    _k: function () { return 'photo.done.' + S.server; },
+    _m: null, _timer: null,
+    _load: function () { if (!this._m) this._m = lsGet(this._k(), {}) || {}; return this._m; },
+    key: function (album, file) {
+      var s = album + '|' + file.name + '|' + file.size + '|' + file.lastModified;
+      var a = 0x811c9dc5, b = 0x9747b28c;
+      for (var i = 0; i < s.length; i++) {
+        var c = s.charCodeAt(i);
+        a = Math.imul(a ^ c, 16777619) >>> 0;
+        b = Math.imul(b ^ c, 2246822507) >>> 0;
+        b = (b ^ (b >>> 13)) >>> 0;
+      }
+      return a.toString(36) + b.toString(36);
+    },
+    has: function (album, file) { return !!this._load()[this.key(album, file)]; },
+    add: function (album, file) {
+      var m = this._load(), k = this.key(album, file);
+      if (m[k]) return;
+      m[k] = 1;
+      var self = this;
+      if (!this._timer) this._timer = setTimeout(function () { self.flush(); }, 2000);
+    },
+    /** 저장할 때 다른 창이 그사이 저장한 기록과 합친다 */
+    flush: function () {
+      if (this._timer) { clearTimeout(this._timer); this._timer = null; }
+      if (!this._m) return;
+      var disk = lsGet(this._k(), {}) || {};
+      for (var k in this._m) disk[k] = 1;
+      this._m = disk;
+      lsSet(this._k(), disk);
+    }
+  };
+  window.addEventListener('pagehide', function () { doneMem.flush(); });
+
   /* ───────── 공통 ───────── */
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
     return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -388,7 +425,9 @@
   };
 
   var renderTimer = null;
-  function onItem() {
+  function onItem(item) {
+    // 폴더 올리기에서 성공했거나 서버가 '이미 올린 사진'이라고 한 사진은 이 PC에 기억
+    if (item && item.memAlbum && (item.status === 'ok' || (item.status === 'dup' && item.note === '이미 올린 사진'))) doneMem.add(item.memAlbum, item.file);
     if (renderTimer) return;
     renderTimer = setTimeout(function () {
       renderTimer = null;
@@ -472,6 +511,12 @@
       g.items = g.files.map(function (f) { return { file: f, status: 'wait', note: '', shotAt: null }; });
     });
     applyHold();
+    // 이 PC에서 이미 다 올린 폴더는 체크를 끄고 목록 맨 아래로
+    doneMem.flush(); // 다른 창에서 그사이 올린 기록까지 읽음
+    S.folders.forEach(function (g) { applyMemory(g); if (g.allDone) g.include = false; });
+    S.folders.sort(function (a, b) { return (a.allDone ? 1 : 0) - (b.allDone ? 1 : 0); });
+    var doneN = S.folders.filter(function (g) { return g.allDone; }).length;
+    if (doneN) msg($('annualMsg'), 'info', '이 PC에서 이미 다 올린 폴더 ' + doneN + '개는 체크를 끄고 목록 맨 아래에 접어 두었습니다.');
     renderFolders();
   });
 
@@ -498,7 +543,7 @@
       var hit = null;
       words.some(function (w) { return keys.some(function (k) { return k.indexOf(w.key) >= 0; }) && (hit = w.raw); });
       if (hit && !g.held) g.include = false;
-      else if (!hit && g.held) g.include = g.ok;
+      else if (!hit && g.held) g.include = g.ok && !g.allDone;
       g.held = hit;
     });
   }
@@ -521,6 +566,16 @@
   }
   function folderAlbum(g) { return buildAlbumName(g.code, g.team, canon(g.team, cleanProgram(g.program))); }
 
+  /** 이 PC가 기억하는 '이미 올린 사진'을 표시. 앨범 이름이 바뀌면(이름·날짜·팀 수정) 표시를 되돌린다 */
+  function applyMemory(g) {
+    var name = folderValid(g) ? folderAlbum(g) : '';
+    g.items.forEach(function (q) {
+      if (q.memHit && q.memHit !== name) { q.memHit = null; q.status = 'wait'; q.note = ''; }
+      if (name && q.status === 'wait' && doneMem.has(name, q.file)) { q.memHit = name; q.status = 'dup'; q.note = '이미 올린 사진(이 PC 기록)'; }
+    });
+    g.allDone = !!name && g.items.length > 0 && g.items.every(function (q) { return q.status === 'ok' || q.status === 'dup'; });
+  }
+
   function renderFolders() {
     $('folderCard').classList.remove('hidden');
     var active = document.activeElement;
@@ -533,6 +588,12 @@
       var done = g.items.filter(function (q) { return q.status === 'ok' || q.status === 'dup'; }).length;
       var bad = g.items.filter(function (q) { return q.status === 'err' || q.status === 'warn'; });
       var miss = g.include ? folderMissing(g) : [];
+      if (g.allDone && !g.open) {
+        return '<div class="folder" data-i="' + i + '"><div class="row" style="align-items:center">' +
+          '<div style="flex:3"><b>' + esc(g.name) + '</b> <span class="muted">' + g.files.length + '장</span> <span class="badge ok">모두 올림</span>' +
+          '<div class="src">' + esc(name) + '</div></div>' +
+          '<button class="btn small" data-f="open" style="flex:none">펼치기</button></div></div>';
+      }
       return '<div class="folder' + (miss.length ? ' bad' : '') + '" data-i="' + i + '">' +
         (miss.length ? '<div class="need">⚠ ' + esc(miss.join('·')) + ' 칸을 채우거나, 이 폴더 체크를 끄세요</div>' : '') +
         '<label class="check" style="margin:0"><input type="checkbox" data-f="include"' + (g.include ? ' checked' : '') + (g.held ? ' disabled' : '') + '> ' +
@@ -562,7 +623,7 @@
         '</div>';
     }).join('');
     var sel = S.folders.filter(function (g) { return g.include; });
-    var selectable = S.folders.filter(function (g) { return !g.held; });
+    var selectable = S.folders.filter(function (g) { return !g.held && !g.allDone; });
     $('fAll').checked = selectable.length > 0 && sel.length === selectable.length;
     $('fAll').indeterminate = sel.length > 0 && sel.length < selectable.length;
     $('fAll').disabled = S.busy || !selectable.length;
@@ -591,18 +652,21 @@
       if (!nm || nm === g.name || S.busy) { renderFolders(); return; }
       g.name = nm; parseGroup(g);
     }
+    if (!S.busy) applyMemory(g);
     renderFolders();
   });
   $('fAll').addEventListener('change', function () {
     if (S.busy) return;
     var on = $('fAll').checked;
-    S.folders.forEach(function (g) { if (!g.held) g.include = on; });
+    S.folders.forEach(function (g) { if (!g.held && !g.allDone) g.include = on; });
     renderFolders();
   });
   $('folderList').addEventListener('click', function (ev) {
-    if (!ev.target.dataset || ev.target.dataset.f !== 'nameReset' || S.busy) return;
+    var f = ev.target.dataset && ev.target.dataset.f;
+    if ((f !== 'nameReset' && f !== 'open') || S.busy) return;
     var g = S.folders[+ev.target.closest('.folder').dataset.i];
-    g.name = g.origName; parseGroup(g); renderFolders();
+    if (f === 'open') { g.open = true; renderFolders(); return; }
+    g.name = g.origName; parseGroup(g); applyMemory(g); renderFolders();
   });
 
   /** 같은 팀·같은 프로그램 폴더가 2개 이상이면 연간 앨범으로 묶기 */
@@ -636,8 +700,10 @@
     var sel = S.folders.filter(function (g) { return g.include && folderValid(g); });
     var jobsMap = {};
     sel.forEach(function (g) {
+      applyMemory(g); // 이 PC가 기억하는 사진은 촬영일 읽기·서버 확인 없이 건너뜀
       var album = { code: g.code, team: g.team, program: canon(g.team, cleanProgram(g.program)) };
       var k = buildAlbumName(album.code, album.team, album.program);
+      g.items.forEach(function (q) { q.memAlbum = k; });
       (jobsMap[k] = jobsMap[k] || { album: album, items: [] }).items = jobsMap[k].items.concat(g.items.filter(retryable));
     });
     var jobs = Object.keys(jobsMap).sort().map(function (k) { return jobsMap[k]; }).filter(function (j) { return j.items.length; });
