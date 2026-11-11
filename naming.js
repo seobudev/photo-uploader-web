@@ -261,6 +261,41 @@ function yearMonthFromAncestors_(ancestors) {
   return { year: year, month: month, ambiguous: (ambiguous && !year) || all.length > 1 };
 }
 
+/**
+ * 팀·연도·월 폴더와 사진 폴더 사이에 있는 중간 폴더들(가까운 순 ancestors)을 읽는다.
+ * 예) 6문화누리팀 / 10. 취미여가(숲친구) / 20251104 서오릉 → words ['취미여가 숲친구']
+ *     8기획팀 / 전직원회의 / 0910 / 서부의 사계 → words ['전직원회의'], 날짜 '0910'
+ * 팀·연도·월 폴더를 만나면 멈춘다. 그런 경계가 없으면 맨 위(직접 고른) 폴더는 넣지 않는다.
+ * 순서 표시(10. / ㅎ. / 03_)는 뗀다.
+ */
+function middleFolders_(ancestors, teams) {
+  var words = [], dateText = '', dateFrom = '';
+  for (var i = 0; i < ancestors.length; i++) {
+    var a = normalizeText(ancestors[i]);
+    var fd = extractDate_(a);
+    if (fd && isAnnualCode(fd.code)) fd = null;
+    if (!fd && (/(?:^|[^\d])20\d{2}(?!\d)/.test(a) || /(?:^|[^\d])\d{1,2}\s*월/.test(a))) break; // 연도·월 폴더
+    var ft = findTeam_(a.split(TOKEN_SPLIT_).filter(Boolean), teams);
+    if (ft.team && !ft.viaPrefix) break; // 팀 폴더
+    if (i === ancestors.length - 1) break; // 경계 없이 맨 위까지 오면 고른 폴더 이름은 넣지 않음
+    var rest = a;
+    if (fd) {
+      if (!dateText) { dateText = fd.code; dateFrom = a; }
+      rest = fd.rest;
+    } else {
+      var pd = extractPartialDate_(a);
+      if (pd && pd.month) {
+        if (!dateText) { dateText = pad2_(pd.month) + pad2_(pd.day); dateFrom = a; }
+        rest = pd.rest;
+      }
+    }
+    rest = rest.replace(/^\s*(?:\d{1,3}|[ㄱ-ㅎ]|[A-Za-z])\s*[.)_\-]\s*/, '');
+    rest = rest.split(TOKEN_SPLIT_).filter(Boolean).join(' ');
+    if (rest) words.unshift(rest);
+  }
+  return { words: words, dateText: dateText, dateFrom: dateFrom };
+}
+
 function codeDays_(code) {
   return Date.UTC(2000 + Number(code.slice(0, 2)), Number(code.slice(2, 4)) - 1, Number(code.slice(4, 6))) / 86400000;
 }
@@ -282,6 +317,12 @@ function parseFolderName(raw, teams, opts) {
   var s = normalizeText(raw);
   var issues = [];
   var notes = []; // 안내만 하고 '확인 필요'로 막지 않는 것
+  var mid = middleFolders_(ancestors, teams);
+  // 사진 폴더 이름에 날짜가 없고 중간 폴더에 날짜가 있으면(…/0910/서부의 사계) 그 날짜를 쓴다
+  if (mid.dateText && !extractDate_(s) && !extractPartialDate_(s)) {
+    s = mid.dateText + ' ' + s;
+    notes.push('날짜는 상위 폴더(' + mid.dateFrom + ')에서 찾았습니다');
+  }
   var code = null;
   var annual = false;
   var fromName = false;
@@ -372,8 +413,13 @@ function parseFolderName(raw, teams, opts) {
   if (team && ancTeam && team !== ancTeam) issues.push('폴더 이름의 팀(' + team + ')과 상위 폴더의 팀(' + ancTeam + ')이 다릅니다');
   if (!team && ancTeam) { team = ancTeam; notes.push('팀은 상위 폴더(' + ancTeamFrom + ')에서 찾았습니다'); }
 
-  var program = cleanProgram(found.tokens.join(' '));
-  if (normalizeText(found.tokens.join(' ')).length > NAMING_MAX_PROGRAM_LEN) issues.push('프로그램명이 길어 ' + NAMING_MAX_PROGRAM_LEN + '자로 줄였습니다');
+  // 중간 폴더 이름을 프로그램명 앞에 붙인다 (이미 들어 있는 말은 빼고)
+  var leafProg = found.tokens.join(' ');
+  var addWords = mid.words.filter(function (w) { return compactKey(leafProg).indexOf(compactKey(w)) < 0; });
+  if (addWords.length) notes.push('프로그램명 앞에 상위 폴더 이름(' + addWords.join(' · ') + ')을 붙였습니다');
+  var fullProg = addWords.concat(leafProg ? [leafProg] : []).join(' ');
+  var program = cleanProgram(fullProg);
+  if (normalizeText(fullProg).length > NAMING_MAX_PROGRAM_LEN) issues.push('프로그램명이 길어 ' + NAMING_MAX_PROGRAM_LEN + '자로 줄였습니다');
 
   // 날짜 없는 폴더가 연도 폴더 안에 있으면: 1년 내내 하는 사업으로 보고 그해 연간 앨범 제안
   if (!code && anc.year) {
