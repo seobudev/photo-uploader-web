@@ -261,6 +261,9 @@ function yearMonthFromAncestors_(ancestors) {
   return { year: year, month: month, ambiguous: (ambiguous && !year) || all.length > 1 };
 }
 
+/** 폴더 앞 순서 표시: "01. ", "10.", "ㅎ. ", "A) ", "03_". 뒤에 숫자가 오면(1.7 행사, 26.01.02) 날짜라서 떼지 않는다 */
+var ORDER_PREFIX_ = /^\s*(?:\d{1,2}\s*[.)_\-](?!\s*\d)|[ㄱ-ㅎA-Za-z]\s*[.)](?![A-Za-z]))\s*/;
+
 /**
  * 팀·연도·월 폴더와 사진 폴더 사이에 있는 중간 폴더들(가까운 순 ancestors)을 읽는다.
  * 예) 6문화누리팀 / 10. 취미여가(숲친구) / 20251104 서오릉 → words ['취미여가 숲친구']
@@ -289,7 +292,7 @@ function middleFolders_(ancestors, teams) {
         rest = pd.rest;
       }
     }
-    rest = rest.replace(/^\s*(?:\d{1,3}|[ㄱ-ㅎ]|[A-Za-z])\s*[.)_\-]\s*/, '');
+    rest = rest.replace(ORDER_PREFIX_, '');
     rest = rest.split(TOKEN_SPLIT_).filter(Boolean).join(' ');
     if (rest) words.unshift(rest);
   }
@@ -314,7 +317,7 @@ function parseFolderName(raw, teams, opts) {
   opts = opts || {};
   teams = teams || [];
   var ancestors = opts.ancestors || [];
-  var s = normalizeText(raw);
+  var s = normalizeText(raw).replace(ORDER_PREFIX_, ''); // 01. 성인문해 → 성인문해
   var issues = [];
   var notes = []; // 안내만 하고 '확인 필요'로 막지 않는 것
   var mid = middleFolders_(ancestors, teams);
