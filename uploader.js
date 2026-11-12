@@ -48,8 +48,9 @@
     }
     function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
     // 429(요청이 너무 많음)는 구글이 처리하지 않은 요청이라 기다렸다 다시 보내도 중복되지 않는다
-    var RATE_WAITS = d.rateWaits || [60000, 180000, 300000, 600000];
-    var RATE_STOP = '구글포토가 요청이 너무 많다며 받지 않아 멈췄습니다 (HTTP 429). 다른 창·PC에서 동시에 올리고 있다면 하나만 두고, 30분쯤 뒤 같은 폴더를 다시 고르면 이어서 올라갑니다. 계속되면 관리자에게 알려주세요.';
+    // 공용 계정에 다른 팀이 동시에 올리면('concurrent write request') 길게 막힐 수 있어, 10분 간격으로 약 5시간까지 기다린다
+    var RATE_WAITS = d.rateWaits || [60000, 180000, 300000].concat(Array.apply(null, Array(28)).map(function () { return 600000; }));
+    var RATE_STOP = '구글포토가 요청이 너무 많다며 받지 않아 멈췄습니다 (HTTP 429). 다른 창·PC에서 동시에 올리고 있다면 하나만 두고, 다른 팀이 덜 올리는 시간(저녁·주말)에 같은 폴더를 다시 고르면 이어서 올라갑니다. 계속되면 관리자에게 알려주세요.';
     // 429를 한 번이라도 받으면 이후 모든 요청(전송·등록) 사이에 간격을 두고, 또 받으면 간격을 늘린다
     var GAP = d.rateGap || [2000, 20000]; // [처음 간격, 최대 간격]
     var gapMs = 0;
@@ -65,7 +66,8 @@
     function rateWait(n) {
       slowDown();
       var s = Math.round(RATE_WAITS[n] / 1000);
-      if (d.onWait) d.onWait('구글포토가 잠시 쉬어 가라고 해서 ' + (s >= 60 ? Math.round(s / 60) + '분' : s + '초') + ' 기다린 뒤 속도를 낮춰 이어서 올립니다… (창을 닫지 마세요)');
+      if (d.onWait) d.onWait('구글포토가 잠시 쉬어 가라고 해서 ' + (s >= 60 ? Math.round(s / 60) + '분' : s + '초') + ' 기다린 뒤 이어서 올립니다… (' + (n + 1) + '번째 대기' +
+        (n >= 3 ? ' · 다른 팀이 같은 계정에 올리는 중일 수 있습니다' : '') + ' · 창을 닫지 마세요)');
       return sleep(RATE_WAITS[n]);
     }
 
